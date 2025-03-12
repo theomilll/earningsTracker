@@ -1,0 +1,39 @@
+<!-- templates/base.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Stock Market Analysis{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    {% block extra_css %}{% endblock %}
+</head>
+<body class="bg-gray-100">
+    <nav class="bg-blue-800 text-white p-4">
+        <div class="container mx-auto flex justify-between items-center">
+            <a href="{% url 'core:home' %}" class="text-xl font-bold">Stock Market Analysis</a>
+            <div>
+                <form action="{% url 'core:search' %}" method="get" class="flex">
+                    <input type="text" name="query" placeholder="Enter company name or ticker..." 
+                           class="px-4 py-2 rounded-l text-gray-800" required>
+                    <button type="submit" class="bg-blue-600 px-4 py-2 rounded-r hover:bg-blue-500">
+                        Search
+                    </button>
+                </form>
+            </div>
+        </div>
+    </nav>
+    
+    <main class="container mx-auto p-4">
+        {% block content %}{% endblock %}
+    </main>
+    
+    <footer class="bg-gray-800 text-white p-4 mt-8">
+        <div class="container mx-auto">
+            <p class="text-center">Stock Market Analysis - Using data from Yahoo Finance</p>
+        </div>
+    </footer>
+    
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

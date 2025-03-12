@@ -1,0 +1,203 @@
+<!-- templates/company_profiles/financial_statements.html -->
+{% extends 'base.html' %}
+
+{% block title %}{{ company.name }} ({{ company.ticker }}) Financial Statements - Stock Analysis{% endblock %}
+
+{% block content %}
+<div class="bg-white p-6 rounded-lg shadow-md">
+    <!-- Company Header -->
+    <div class="flex flex-col md:flex-row justify-between items-start mb-6">
+        <div>
+            <h1 class="text-3xl font-bold">{{ company.name }} ({{ company.ticker }})</h1>
+            <div class="text-gray-600">{{ company.sector }} | {{ company.industry }}</div>
+        </div>
+        
+        {% if company.financials %}
+            <div class="bg-gray-100 p-4 rounded-lg mt-4 md:mt-0">
+                <div class="text-3xl font-bold">${{ company.financials.current_price|floatformat:2 }}</div>
+                {% if company.financials.price_change_ytd %}
+                    <div class="{% if company.financials.price_change_ytd > 0 %}text-green-600{% else %}text-red-600{% endif %}">
+                        {{ company.financials.price_change_ytd|floatformat:2 }}% YTD
+                    </div>
+                {% endif %}
+            </div>
+        {% endif %}
+    </div>
+    
+    {% if error %}
+        <div class="bg-yellow-50 border border-yellow-200 text-yellow-800 p-4 mb-6 rounded">
+            {{ error }}
+        </div>
+    {% endif %}
+    
+    <!-- Navigation Tabs -->
+    <div class="border-b border-gray-200 mb-6">
+        <nav class="flex -mb-px">
+            <a href="{% url 'company_profiles:detail' ticker=company.ticker %}" 
+               class="px-4 py-2 border-b-2 border-transparent hover:border-gray-300 text-gray-600 hover:text-gray-800">Overview</a>
+            <a href="{% url 'company_profiles:financials' ticker=company.ticker %}" 
+               class="px-4 py-2 border-b-2 border-blue-500 text-blue-600 font-medium">Financials</a>
+            <a href="{% url 'company_profiles:peers' ticker=company.ticker %}" 
+               class="px-4 py-2 border-b-2 border-transparent hover:border-gray-300 text-gray-600 hover:text-gray-800">Peers</a>
+            <a href="{% url 'company_profiles:news' ticker=company.ticker %}" 
+               class="px-4 py-2 border-b-2 border-transparent hover:border-gray-300 text-gray-600 hover:text-gray-800">News</a>
+        </nav>
+    </div>
+    
+    <!-- Financial Statements Tabs -->
+    <div class="mb-6">
+        <div class="border-b border-gray-200">
+            <nav class="flex -mb-px">
+                <button id="income-tab" 
+                        class="px-4 py-2 border-b-2 border-blue-500 text-blue-600 font-medium">
+                    Income Statement
+                </button>
+                <button id="balance-tab" 
+                        class="px-4 py-2 border-b-2 border-transparent hover:border-gray-300 text-gray-600 hover:text-gray-800">
+                    Balance Sheet
+                </button>
+                <button id="cashflow-tab" 
+                        class="px-4 py-2 border-b-2 border-transparent hover:border-gray-300 text-gray-600 hover:text-gray-800">
+                    Cash Flow
+                </button>
+            </nav>
+        </div>
+    </div>
+    
+    <!-- Financial Tables -->
+    <div>
+        <div id="income-table" class="overflow-x-auto">
+            <table class="min-w-full bg-white">
+                <thead>
+                    <tr>
+                        <th class="px-4 py-2 bg-gray-100 text-left">Item</th>
+                        {% for item in income_data.0.values %}
+                            <th class="px-4 py-2 bg-gray-100 text-right">{{ item.year }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in income_data %}
+                        <tr class="{% cycle '' 'bg-gray-50' %}">
+                            <td class="px-4 py-2 font-medium">{{ row.item }}</td>
+                            {% for item in row.values %}
+                                <td class="px-4 py-2 text-right">{{ item.value }}</td>
+                            {% endfor %}
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        
+        <div id="balance-table" class="hidden overflow-x-auto">
+            <table class="min-w-full bg-white">
+                <thead>
+                    <tr>
+                        <th class="px-4 py-2 bg-gray-100 text-left">Item</th>
+                        {% for item in balance_data.0.values %}
+                            <th class="px-4 py-2 bg-gray-100 text-right">{{ item.year }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in balance_data %}
+                        <tr class="{% cycle '' 'bg-gray-50' %}">
+                            <td class="px-4 py-2 font-medium">{{ row.item }}</td>
+                            {% for item in row.values %}
+                                <td class="px-4 py-2 text-right">{{ item.value }}</td>
+                            {% endfor %}
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        
+        <div id="cashflow-table" class="hidden overflow-x-auto">
+            <table class="min-w-full bg-white">
+                <thead>
+                    <tr>
+                        <th class="px-4 py-2 bg-gray-100 text-left">Item</th>
+                        {% for item in cashflow_data.0.values %}
+                            <th class="px-4 py-2 bg-gray-100 text-right">{{ item.year }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in cashflow_data %}
+                        <tr class="{% cycle '' 'bg-gray-50' %}">
+                            <td class="px-4 py-2 font-medium">{{ row.item }}</td>
+                            {% for item in row.values %}
+                                <td class="px-4 py-2 text-right">{{ item.value }}</td>
+                            {% endfor %}
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Tab switching functionality
+    const incomeTrigger = document.getElementById('income-tab');
+    const balanceTrigger = document.getElementById('balance-tab');
+    const cashflowTrigger = document.getElementById('cashflow-tab');
+    
+    const incomeTable = document.getElementById('income-table');
+    const balanceTable = document.getElementById('balance-table');
+    const cashflowTable = document.getElementById('cashflow-table');
+    
+    incomeTrigger.addEventListener('click', function() {
+        // Show income table, hide others
+        incomeTable.classList.remove('hidden');
+        balanceTable.classList.add('hidden');
+        cashflowTable.classList.add('hidden');
+        
+        // Update tab styling
+        incomeTrigger.classList.add('border-blue-500', 'text-blue-600');
+        incomeTrigger.classList.remove('border-transparent', 'text-gray-600');
+        
+        balanceTrigger.classList.remove('border-blue-500', 'text-blue-600');
+        balanceTrigger.classList.add('border-transparent', 'text-gray-600');
+        
+        cashflowTrigger.classList.remove('border-blue-500', 'text-blue-600');
+        cashflowTrigger.classList.add('border-transparent', 'text-gray-600');
+    });
+    
+    balanceTrigger.addEventListener('click', function() {
+        // Show balance table, hide others
+        incomeTable.classList.add('hidden');
+        balanceTable.classList.remove('hidden');
+        cashflowTable.classList.add('hidden');
+        
+        // Update tab styling
+        incomeTrigger.classList.remove('border-blue-500', 'text-blue-600');
+        incomeTrigger.classList.add('border-transparent', 'text-gray-600');
+        
+        balanceTrigger.classList.add('border-blue-500', 'text-blue-600');
+        balanceTrigger.classList.remove('border-transparent', 'text-gray-600');
+        
+        cashflowTrigger.classList.remove('border-blue-500', 'text-blue-600');
+        cashflowTrigger.classList.add('border-transparent', 'text-gray-600');
+    });
+    
+    cashflowTrigger.addEventListener('click', function() {
+        // Show cashflow table, hide others
+        incomeTable.classList.add('hidden');
+        balanceTable.classList.add('hidden');
+        cashflowTable.classList.remove('hidden');
+        
+        // Update tab styling
+        incomeTrigger.classList.remove('border-blue-500', 'text-blue-600');
+        incomeTrigger.classList.add('border-transparent', 'text-gray-600');
+        
+        balanceTrigger.classList.remove('border-blue-500', 'text-blue-600');
+        balanceTrigger.classList.add('border-transparent', 'text-gray-600');
+        
+        cashflowTrigger.classList.add('border-blue-500', 'text-blue-600');
+        cashflowTrigger.classList.remove('border-transparent', 'text-gray-600');
+    });
+</script>
+{% endblock %}

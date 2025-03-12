@@ -1,0 +1,29 @@
+<!-- templates/stock_data/search_results.html -->
+{% extends 'base.html' %}
+
+{% block title %}Search Results for "{{ query }}" - Stock Market Analysis{% endblock %}
+
+{% block content %}
+<div class="bg-white p-6 rounded-lg shadow-md">
+    <h1 class="text-2xl font-bold mb-6">Search Results for "{{ query }}"</h1>
+    
+    {% if results %}
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {% for result in results %}
+                <a href="{% url 'company_profiles:detail' ticker=result.ticker %}" 
+                   class="bg-gray-50 p-4 rounded shadow hover:shadow-lg transition border border-gray-200">
+                    <div class="font-bold text-lg">{{ result.ticker }}</div>
+                    <div>{{ result.name }}</div>
+                    {% if result.exchange %}
+                        <div class="text-sm text-gray-600">{{ result.exchange }}</div>
+                    {% endif %}
+                </a>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="bg-yellow-50 border border-yellow-100 text-yellow-800 p-4 rounded">
+            <p>No results found for "{{ query }}". Please try another search term.</p>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

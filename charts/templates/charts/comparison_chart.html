@@ -1,0 +1,415 @@
+<!-- templates/charts/comparison_chart.html -->
+{% extends 'base.html' %}
+
+{% block title %}Company Comparison - Stock Analysis{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.css">
+<style>
+    .chart-container {
+        height: 500px;
+        position: relative;
+    }
+    .metric-button {
+        @apply px-3 py-1 rounded;
+    }
+    .metric-button.active {
+        @apply bg-blue-600 text-white;
+    }
+    .metric-button:not(.active) {
+        @apply bg-gray-200 hover:bg-gray-300 text-gray-800;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="bg-white p-6 rounded-lg shadow-md">
+    <h1 class="text-3xl font-bold mb-6">Company Comparison</h1>
+    
+    <!-- Companies List -->
+    <div class="mb-6">
+        <h2 class="text-xl font-bold mb-2">Companies</h2>
+        
+        <div class="flex flex-wrap gap-2 mb-4">
+            {% for company in companies %}
+                <div class="inline-flex items-center bg-gray-100 px-3 py-1 rounded">
+                    <span class="font-bold mr-1">{{ company.ticker }}:</span>
+                    <span>{{ company.name }}</span>
+                </div>
+            {% endfor %}
+        </div>
+        
+        <!-- Add More Companies Form -->
+        <form id="addCompanyForm" class="flex gap-2 items-center">
+            <input type="text" id="tickerInput" placeholder="Add company (ticker)" 
+                   class="px-3 py-1 border rounded" required>
+            <button type="submit" class="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700">
+                Add
+            </button>
+        </form>
+    </div>
+    
+    <!-- Chart Controls -->
+    <div class="mb-4">
+        <h2 class="text-xl font-bold mb-2">Comparison Metrics</h2>
+        
+        <div class="flex flex-wrap gap-2 mb-4" id="metricControls">
+            {% for metric in metrics %}
+                <button class="metric-button {% if metric.value == default_metric %}active{% endif %}" 
+                        data-metric="{{ metric.value }}">
+                    {{ metric.label }}
+                </button>
+            {% endfor %}
+        </div>
+    </div>
+    
+    <!-- Chart Container -->
+    <div class="chart-container">
+        <canvas id="comparisonChart"></canvas>
+    </div>
+    
+    <!-- Loading Indicator -->
+    <div id="loadingIndicator" class="hidden text-center py-4">
+        <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <span class="ml-2">Loading data...</span>
+    </div>
+    
+    <!-- Error Message -->
+    <div id="errorMessage" class="hidden bg-red-50 border border-red-200 text-red-800 p-4 rounded mt-4"></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.js"></script>
+<script>
+    // Chart configuration
+    let comparisonChart = null;
+    let currentTickers = '{{ tickers }}';
+    
+    // Get DOM elements
+    const chartCanvas = document.getElementById('comparisonChart');
+    const metricButtons = document.querySelectorAll('.metric-button');
+    const addCompanyForm = document.getElementById('addCompanyForm');
+    const tickerInput = document.getElementById('tickerInput');
+    const loadingIndicator = document.getElementById('loadingIndicator');
+    const errorMessage = document.getElementById('errorMessage');
+    
+    // Initialize with default metric
+    loadChartData('{{ default_metric }}');
+    
+    // Metric button click handlers
+    metricButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            // Update active button
+            metricButtons.forEach(btn => btn.classList.remove('active'));
+            this.classList.add('active');
+            
+            // Load data for selected metric
+            const metric = this.getAttribute('data-metric');
+            loadChartData(metric);
+        });
+    });
+    
+    // Add company form submit handler
+    addCompanyForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const ticker = tickerInput.value.trim().toUpperCase();
+        if (!ticker) return;
+        
+        // Add ticker to current list if not already there
+        const tickers = currentTickers.split(',');
+        if (!tickers.includes(ticker)) {
+            tickers.push(ticker);
+            currentTickers = tickers.join(',');
+            
+            // Reload chart with new company
+            const activeButton = document.querySelector('.metric-button.active');
+            const metric = activeButton.getAttribute('data-metric');
+            loadChartData(metric);
+            
+            // Reload page to update company list
+            window.location.href = `{% url 'charts:comparison' %}?tickers=${currentTickers}`;
+        }
+        
+        tickerInput.value = '';
+    });
+    
+    // Function to load chart data
+    function loadChartData(metric) {
+        // Show loading indicator
+        loadingIndicator.classList.remove('hidden');
+        errorMessage.classList.add('hidden');
+        
+        // Fetch data from API
+        fetch(`{% url 'charts:comparison_data' %}?tickers=${currentTickers}&metric=${metric}`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
+            .then(data => {
+                // Hide loading indicator
+                loadingIndicator.classList.add('hidden');
+                
+                // Update chart with new data
+                updateChart(data, metric);
+            })
+            .catch(error => {
+                // Hide loading indicator and show error
+                loadingIndicator.classList.add('hidden');
+                errorMessage.textContent = `Error loading chart data: ${error.message}`;
+                errorMessage.classList.remove('hidden');
+                console.error('Error fetching chart data:', error);
+            });
+    }
+    
+    // Function to update the chart with new data
+    function updateChart(data, metric) {
+        // Destroy existing chart if it exists
+        if (comparisonChart) {
+            comparisonChart.destroy();
+        }
+        
+        // Check if we have time series data or single values
+        const isTimeSeries = getDataTypeForMetric(metric) === 'timeseries';
+        
+        if (isTimeSeries) {
+            // Create time series chart (line chart)
+            createTimeSeriesChart(data, metric);
+        } else {
+            // Create bar chart for single values
+            createBarChart(data, metric);
+        }
+    }
+    
+    // Function to create time series chart
+    function createTimeSeriesChart(data, metric) {
+        // Generate random colors for each company
+        const colors = generateChartColors(Object.keys(data.data).length);
+        
+        // Prepare datasets
+        const datasets = [];
+        let i = 0;
+        
+        for (const ticker in data.data) {
+            if (data.data.hasOwnProperty(ticker)) {
+                datasets.push({
+                    label: ticker,
+                    data: data.data[ticker].map(item => ({
+                        x: item.date,
+                        y: item.value
+                    })),
+                    borderColor: colors[i],
+                    backgroundColor: colors[i].replace('rgb', 'rgba').replace(')', ', 0.1)'),
+                    borderWidth: 2,
+                    tension: 0.1
+                });
+                i++;
+            }
+        }
+        
+        // Create chart
+        comparisonChart = new Chart(chartCanvas, {
+            type: 'line',
+            data: {
+                datasets: datasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {
+                            unit: 'day'
+                        },
+                        grid: {
+                            display: false
+                        }
+                    },
+                    y: getYAxisConfigForMetric(metric)
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const value = context.raw.y;
+                                return context.dataset.label + ': ' + getFormattedValueForMetric(metric, value);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+    
+    // Function to create bar chart
+    function createBarChart(data, metric) {
+        // Generate random colors for each company
+        const colors = generateChartColors(Object.keys(data.data).length);
+        
+        // Prepare data
+        const labels = [];
+        const values = [];
+        let i = 0;
+        
+        for (const ticker in data.data) {
+            if (data.data.hasOwnProperty(ticker)) {
+                labels.push(ticker);
+                values.push(data.data[ticker][0].value);
+                i++;
+            }
+        }
+        
+        // Create chart
+        comparisonChart = new Chart(chartCanvas, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: getMetricLabel(metric),
+                    data: values,
+                    backgroundColor: colors,
+                    borderColor: colors,
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        grid: {
+                            display: false
+                        }
+                    },
+                    y: getYAxisConfigForMetric(metric)
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const value = context.raw;
+                                return getFormattedValueForMetric(metric, value);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+    
+    // Helper function to get data type for metric
+    function getDataTypeForMetric(metric) {
+        const timeSeriesMetrics = ['price_ytd', 'revenue_growth'];
+        return timeSeriesMetrics.includes(metric) ? 'timeseries' : 'single';
+    }
+    
+    // Helper function to get metric label
+    function getMetricLabel(metric) {
+        const metricLabels = {
+            'price_ytd': 'YTD Price Change (%)',
+            'market_cap': 'Market Cap',
+            'pe_ratio': 'P/E Ratio',
+            'revenue_growth': 'Revenue Growth (%)',
+            'profit_margin': 'Profit Margin (%)',
+            'dividend_yield': 'Dividend Yield (%)'
+        };
+        
+        return metricLabels[metric] || metric;
+    }
+    
+    // Helper function to get y-axis configuration based on metric
+    function getYAxisConfigForMetric(metric) {
+        const percentageMetrics = ['price_ytd', 'revenue_growth', 'profit_margin', 'dividend_yield'];
+        
+        if (percentageMetrics.includes(metric)) {
+            return {
+                ticks: {
+                    callback: function(value) {
+                        return value + '%';
+                    }
+                }
+            };
+        }
+        
+        if (metric === 'pe_ratio') {
+            return {
+                ticks: {
+                    callback: function(value) {
+                        return value.toFixed(1) + 'x';
+                    }
+                }
+            };
+        }
+        
+        // For market cap
+        return {
+            ticks: {
+                callback: function(value) {
+                    if (value >= 1000000000000) {
+                        return '$' + (value / 1000000000000).toFixed(1) + 'T';
+                    }
+                    if (value >= 1000000000) {
+                        return '$' + (value / 1000000000).toFixed(1) + 'B';
+                    }
+                    if (value >= 1000000) {
+                        return '$' + (value / 1000000).toFixed(1) + 'M';
+                    }
+                    return '$' + value;
+                }
+            }
+        };
+    }
+    
+    // Helper function to format values for tooltip
+    function getFormattedValueForMetric(metric, value) {
+        const percentageMetrics = ['price_ytd', 'revenue_growth', 'profit_margin', 'dividend_yield'];
+        
+        if (percentageMetrics.includes(metric)) {
+            return value.toFixed(2) + '%';
+        }
+        
+        if (metric === 'pe_ratio') {
+            return value.toFixed(2) + 'x';
+        }
+        
+        // For market cap
+        if (value >= 1000000000000) {
+            return '$' + (value / 1000000000000).toFixed(2) + ' trillion';
+        }
+        if (value >= 1000000000) {
+            return '$' + (value / 1000000000).toFixed(2) + ' billion';
+        }
+        if (value >= 1000000) {
+            return '$' + (value / 1000000).toFixed(2) + ' million';
+        }
+        return '$' + value;
+    }
+    
+    // Helper function to generate chart colors
+    function generateChartColors(count) {
+        const colors = [];
+        const baseColors = [
+            'rgb(59, 130, 246)',   // Blue
+            'rgb(16, 185, 129)',   // Green
+            'rgb(239, 68, 68)',    // Red
+            'rgb(249, 115, 22)',   // Orange
+            'rgb(139, 92, 246)',   // Purple
+            'rgb(236, 72, 153)',   // Pink
+            'rgb(20, 184, 166)',   // Teal
+            'rgb(245, 158, 11)',   // Amber
+            'rgb(6, 182, 212)',    // Cyan
+            'rgb(168, 85, 247)'    // Violet
+        ];
+        
+        for (let i = 0; i < count; i++) {
+            colors.push(baseColors[i % baseColors.length]);
+        }
+        
+        return colors;
+    }
+</script>
+{% endblock %}

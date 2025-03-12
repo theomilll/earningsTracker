@@ -1,0 +1,312 @@
+<!-- templates/charts/stock_price.html -->
+{% extends 'base.html' %}
+
+{% block title %}{{ company.name }} ({{ company.ticker }}) Stock Price Chart - Stock Analysis{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.css">
+<style>
+    .chart-container {
+        height: 500px;
+        position: relative;
+    }
+    .time-range-button {
+        @apply px-3 py-1 rounded;
+    }
+    .time-range-button.active {
+        @apply bg-blue-600 text-white;
+    }
+    .time-range-button:not(.active) {
+        @apply bg-gray-200 hover:bg-gray-300 text-gray-800;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="bg-white p-6 rounded-lg shadow-md">
+    <!-- Company Header -->
+    <div class="flex flex-col md:flex-row justify-between items-start mb-6">
+        <div>
+            <h1 class="text-3xl font-bold">{{ company.name }} ({{ company.ticker }})</h1>
+            <div class="text-gray-600">{{ company.sector }} | {{ company.industry }}</div>
+        </div>
+        
+        {% if company.financials %}
+            <div class="bg-gray-100 p-4 rounded-lg mt-4 md:mt-0">
+                <div class="text-3xl font-bold">${{ company.financials.current_price|floatformat:2 }}</div>
+                {% if company.financials.price_change_ytd %}
+                    <div class="{% if company.financials.price_change_ytd > 0 %}text-green-600{% else %}text-red-600{% endif %}">
+                        {{ company.financials.price_change_ytd|floatformat:2 }}% YTD
+                    </div>
+                {% endif %}
+            </div>
+        {% endif %}
+    </div>
+    
+    <!-- Chart Controls -->
+    <div class="mb-4">
+        <div class="flex flex-wrap gap-2 mb-4" id="timeRangeControls">
+            {% for range in ranges %}
+                <button class="time-range-button {% if range.value == default_range %}active{% endif %}" 
+                        data-range="{{ range.value }}" data-interval="{{ range.interval }}">
+                    {{ range.label }}
+                </button>
+            {% endfor %}
+        </div>
+        
+        <div class="flex flex-wrap gap-2">
+            <button class="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 text-gray-800" id="toggleChartType">
+                <span id="chartTypeLabel">Candle</span>
+            </button>
+            <button class="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 text-gray-800" id="toggleVolume">
+                Show Volume
+            </button>
+        </div>
+    </div>
+    
+    <!-- Chart Container -->
+    <div class="chart-container">
+        <canvas id="priceChart"></canvas>
+    </div>
+    
+    <!-- Loading Indicator -->
+    <div id="loadingIndicator" class="hidden text-center py-4">
+        <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <span class="ml-2">Loading data...</span>
+    </div>
+    
+    <!-- Error Message -->
+    <div id="errorMessage" class="hidden bg-red-50 border border-red-200 text-red-800 p-4 rounded mt-4"></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/luxon@2.3.1/build/global/luxon.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.1.0/dist/chartjs-adapter-luxon.min.js"></script>
+<script>
+    // Chart configuration
+    let priceChart = null;
+    let chartType = 'candle';  // 'candle' or 'line'
+    let showVolume = false;
+    
+    // Get DOM elements
+    const chartCanvas = document.getElementById('priceChart');
+    const timeRangeButtons = document.querySelectorAll('.time-range-button');
+    const toggleChartTypeBtn = document.getElementById('toggleChartType');
+    const chartTypeLabel = document.getElementById('chartTypeLabel');
+    const toggleVolumeBtn = document.getElementById('toggleVolume');
+    const loadingIndicator = document.getElementById('loadingIndicator');
+    const errorMessage = document.getElementById('errorMessage');
+    
+    // Initialize with default range
+    loadChartData('{{ default_range }}', '1d');
+    
+    // Time range button click handlers
+    timeRangeButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            // Update active button
+            timeRangeButtons.forEach(btn => btn.classList.remove('active'));
+            this.classList.add('active');
+            
+            // Load data for selected range
+            const range = this.getAttribute('data-range');
+            const interval = this.getAttribute('data-interval');
+            loadChartData(range, interval);
+        });
+    });
+    
+    // Toggle chart type button
+    toggleChartTypeBtn.addEventListener('click', function() {
+        chartType = chartType === 'candle' ? 'line' : 'candle';
+        chartTypeLabel.textContent = chartType === 'candle' ? 'Candle' : 'Line';
+        
+        // Reload current data to update chart
+        const activeButton = document.querySelector('.time-range-button.active');
+        const range = activeButton.getAttribute('data-range');
+        const interval = activeButton.getAttribute('data-interval');
+        loadChartData(range, interval);
+    });
+    
+    // Toggle volume button
+    toggleVolumeBtn.addEventListener('click', function() {
+        showVolume = !showVolume;
+        this.textContent = showVolume ? 'Hide Volume' : 'Show Volume';
+        
+        // Reload current data to update chart
+        const activeButton = document.querySelector('.time-range-button.active');
+        const range = activeButton.getAttribute('data-range');
+        const interval = activeButton.getAttribute('data-interval');
+        loadChartData(range, interval);
+    });
+    
+    // Function to load chart data
+    function loadChartData(period, interval) {
+        // Show loading indicator
+        loadingIndicator.classList.remove('hidden');
+        errorMessage.classList.add('hidden');
+        
+        // Fetch data from API
+        fetch(`{% url 'charts:price_data' ticker=company.ticker %}?period=${period}&interval=${interval}`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
+            .then(data => {
+                // Hide loading indicator
+                loadingIndicator.classList.add('hidden');
+                
+                // Update chart with new data
+                updateChart(data);
+            })
+            .catch(error => {
+                // Hide loading indicator and show error
+                loadingIndicator.classList.add('hidden');
+                errorMessage.textContent = `Error loading chart data: ${error.message}`;
+                errorMessage.classList.remove('hidden');
+                console.error('Error fetching chart data:', error);
+            });
+    }
+    
+    // Function to update the chart with new data
+    function updateChart(data) {
+        // Destroy existing chart if it exists
+        if (priceChart) {
+            priceChart.destroy();
+        }
+        
+        // Format data for chart
+        const chartData = {
+            labels: data.data.map(item => new Date(item.date)),
+        };
+        
+        // Configure datasets based on chart type
+        const datasets = [];
+        
+        if (chartType === 'line') {
+            // Line chart dataset
+            datasets.push({
+                label: `${data.ticker} Price`,
+                data: data.data.map(item => item.close),
+                borderColor: 'rgb(59, 130, 246)',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                fill: true,
+                tension: 0.1,
+                yAxisID: 'y'
+            });
+        } else {
+            // Candlestick data (requires custom plugin, using markers as fallback)
+            datasets.push({
+                label: `${data.ticker} High/Low`,
+                data: data.data.map(item => ({
+                    x: new Date(item.date),
+                    y: [item.open, item.high, item.low, item.close]
+                })),
+                backgroundColor: data.data.map(item => 
+                    item.close >= item.open ? 'rgba(75, 192, 192, 0.5)' : 'rgba(255, 99, 132, 0.5)'
+                ),
+                borderColor: data.data.map(item => 
+                    item.close >= item.open ? 'rgb(75, 192, 192)' : 'rgb(255, 99, 132)'
+                ),
+                borderWidth: 1,
+                yAxisID: 'y'
+            });
+        }
+        
+        // Add volume dataset if enabled
+        if (showVolume) {
+            datasets.push({
+                label: 'Volume',
+                data: data.data.map(item => item.volume),
+                backgroundColor: 'rgba(128, 128, 128, 0.3)',
+                borderColor: 'rgba(128, 128, 128, 0.5)',
+                borderWidth: 1,
+                type: 'bar',
+                yAxisID: 'volume'
+            });
+        }
+        
+        // Create new chart
+        priceChart = new Chart(chartCanvas, {
+            type: chartType === 'line' ? 'line' : 'bar',
+            data: {
+                labels: data.data.map(item => new Date(item.date)),
+                datasets: datasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {
+                            unit: data.interval === '1d' ? 'day' : 
+                                  data.interval === '1wk' ? 'week' : 
+                                  data.interval === '1mo' ? 'month' : 'hour'
+                        },
+                        grid: {
+                            display: false
+                        }
+                    },
+                    y: {
+                        position: 'right',
+                        grid: {
+                            color: 'rgba(0, 0, 0, 0.05)'
+                        }
+                    },
+                    volume: showVolume ? {
+                        position: 'left',
+                        grid: {
+                            display: false
+                        },
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                if (value >= 1000000) {
+                                    return (value / 1000000).toFixed(1) + 'M';
+                                }
+                                if (value >= 1000) {
+                                    return (value / 1000).toFixed(0) + 'K';
+                                }
+                                return value;
+                            }
+                        }
+                    } : null
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                if (context.dataset.label === 'Volume') {
+                                    const value = context.raw;
+                                    if (value >= 1000000) {
+                                        return 'Volume: ' + (value / 1000000).toFixed(2) + 'M';
+                                    }
+                                    if (value >= 1000) {
+                                        return 'Volume: ' + (value / 1000).toFixed(0) + 'K';
+                                    }
+                                    return 'Volume: ' + value;
+                                }
+                                
+                                if (chartType === 'candle') {
+                                    const yValues = context.raw.y;
+                                    return [
+                                        `Open: $${yValues[0].toFixed(2)}`,
+                                        `High: $${yValues[1].toFixed(2)}`,
+                                        `Low: $${yValues[2].toFixed(2)}`,
+                                        `Close: $${yValues[3].toFixed(2)}`
+                                    ];
+                                }
+                                
+                                return `Price: $${context.raw.toFixed(2)}`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+</script>
+{% endblock %}

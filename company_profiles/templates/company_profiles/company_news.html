@@ -1,0 +1,74 @@
+<!-- templates/company_profiles/company_news.html -->
+{% extends 'base.html' %}
+
+{% block title %}{{ company.name }} ({{ company.ticker }}) News - Stock Analysis{% endblock %}
+
+{% block content %}
+<div class="bg-white p-6 rounded-lg shadow-md">
+    <!-- Company Header -->
+    <div class="flex flex-col md:flex-row justify-between items-start mb-6">
+        <div>
+            <h1 class="text-3xl font-bold">{{ company.name }} ({{ company.ticker }})</h1>
+            <div class="text-gray-600">{{ company.sector }} | {{ company.industry }}</div>
+        </div>
+        
+        {% if company.financials %}
+            <div class="bg-gray-100 p-4 rounded-lg mt-4 md:mt-0">
+                <div class="text-3xl font-bold">${{ company.financials.current_price|floatformat:2 }}</div>
+                {% if company.financials.price_change_ytd %}
+                    <div class="{% if company.financials.price_change_ytd > 0 %}text-green-600{% else %}text-red-600{% endif %}">
+                        {{ company.financials.price_change_ytd|floatformat:2 }}% YTD
+                    </div>
+                {% endif %}
+            </div>
+        {% endif %}
+    </div>
+    
+    {% if error %}
+        <div class="bg-yellow-50 border border-yellow-200 text-yellow-800 p-4 mb-6 rounded">
+            {{ error }}
+        </div>
+    {% endif %}
+    
+    <!-- Navigation Tabs -->
+    <div class="border-b border-gray-200 mb-6">
+        <nav class="flex -mb-px">
+            <a href="{% url 'company_profiles:detail' ticker=company.ticker %}" 
+               class="px-4 py-2 border-b-2 border-transparent hover:border-gray-300 text-gray-600 hover:text-gray-800">Overview</a>
+            <a href="{% url 'company_profiles:financials' ticker=company.ticker %}" 
+               class="px-4 py-2 border-b-2 border-transparent hover:border-gray-300 text-gray-600 hover:text-gray-800">Financials</a>
+            <a href="{% url 'company_profiles:peers' ticker=company.ticker %}" 
+               class="px-4 py-2 border-b-2 border-transparent hover:border-gray-300 text-gray-600 hover:text-gray-800">Peers</a>
+            <a href="{% url 'company_profiles:news' ticker=company.ticker %}" 
+               class="px-4 py-2 border-b-2 border-blue-500 text-blue-600 font-medium">News</a>
+        </nav>
+    </div>
+    
+    <!-- News Articles -->
+    <div>
+        <h2 class="text-xl font-bold mb-4">Latest News</h2>
+        
+        {% if news_items %}
+            <div class="space-y-4">
+                {% for news in news_items %}
+                    <div class="bg-gray-50 p-4 rounded shadow">
+                        <h3 class="text-lg font-bold">
+                            <a href="{{ news.url }}" target="_blank" class="hover:text-blue-600">
+                                {{ news.title }}
+                            </a>
+                        </h3>
+                        <div class="text-sm text-gray-600 mt-1">
+                            {{ news.source }} | {{ news.date }}
+                        </div>
+                        <p class="mt-2">{{ news.summary }}</p>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="bg-gray-50 p-4 rounded">
+                <p>No recent news available for {{ company.name }}.</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

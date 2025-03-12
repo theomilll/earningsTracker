@@ -1,0 +1,119 @@
+<!-- templates/company_profiles/company_peers.html -->
+{% extends 'base.html' %}
+
+{% block title %}{{ company.name }} ({{ company.ticker }}) Peer Comparison - Stock Analysis{% endblock %}
+
+{% block content %}
+<div class="bg-white p-6 rounded-lg shadow-md">
+    <!-- Company Header -->
+    <div class="flex flex-col md:flex-row justify-between items-start mb-6">
+        <div>
+            <h1 class="text-3xl font-bold">{{ company.name }} ({{ company.ticker }})</h1>
+            <div class="text-gray-600">{{ company.sector }} | {{ company.industry }}</div>
+        </div>
+        
+        {% if company.financials %}
+            <div class="bg-gray-100 p-4 rounded-lg mt-4 md:mt-0">
+                <div class="text-3xl font-bold">${{ company.financials.current_price|floatformat:2 }}</div>
+                {% if company.financials.price_change_ytd %}
+                    <div class="{% if company.financials.price_change_ytd > 0 %}text-green-600{% else %}text-red-600{% endif %}">
+                        {{ company.financials.price_change_ytd|floatformat:2 }}% YTD
+                    </div>
+                {% endif %}
+            </div>
+        {% endif %}
+    </div>
+    
+    {% if error %}
+        <div class="bg-yellow-50 border border-yellow-200 text-yellow-800 p-4 mb-6 rounded">
+            {{ error }}
+        </div>
+    {% endif %}
+    
+    <!-- Navigation Tabs -->
+    <div class="border-b border-gray-200 mb-6">
+        <nav class="flex -mb-px">
+            <a href="{% url 'company_profiles:detail' ticker=company.ticker %}" 
+               class="px-4 py-2 border-b-2 border-transparent hover:border-gray-300 text-gray-600 hover:text-gray-800">Overview</a>
+            <a href="{% url 'company_profiles:financials' ticker=company.ticker %}" 
+               class="px-4 py-2 border-b-2 border-transparent hover:border-gray-300 text-gray-600 hover:text-gray-800">Financials</a>
+            <a href="{% url 'company_profiles:peers' ticker=company.ticker %}" 
+               class="px-4 py-2 border-b-2 border-blue-500 text-blue-600 font-medium">Peers</a>
+            <a href="{% url 'company_profiles:news' ticker=company.ticker %}" 
+               class="px-4 py-2 border-b-2 border-transparent hover:border-gray-300 text-gray-600 hover:text-gray-800">News</a>
+        </nav>
+    </div>
+    
+    <!-- Peer Comparison Table -->
+    <div>
+        <h2 class="text-xl font-bold mb-4">{{ company.name }} vs Peers</h2>
+        
+        {% if peers %}
+            <div class="overflow-x-auto">
+                <table class="min-w-full bg-white">
+                    <thead>
+                        <tr>
+                            <th class="px-4 py-2 bg-gray-100 text-left">Metric</th>
+                            <th class="px-4 py-2 bg-gray-100 text-right bg-blue-50">{{ company.ticker }}</th>
+                            {% for peer in peers %}
+                                <th class="px-4 py-2 bg-gray-100 text-right">{{ peer.ticker }}</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in comparison_data %}
+                            <tr class="{% cycle '' 'bg-gray-50' %}">
+                                <td class="px-4 py-2 font-medium">{{ row.metric }}</td>
+                                <td class="px-4 py-2 text-right bg-blue-50">{{ row.main }}</td>
+                                {% for peer in peers %}
+                                    <td class="px-4 py-2 text-right">{{ row|get_item:peer.ticker }}</td>
+                                {% endfor %}
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="bg-gray-50 p-4 rounded">
+                <p>No peer companies available for comparison.</p>
+            </div>
+        {% endif %}
+    </div>
+    
+    <!-- Peers List -->
+    <div class="mt-8">
+        <h2 class="text-xl font-bold mb-4">Sector Peers</h2>
+        
+        {% if peers %}
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {% for peer in peers %}
+                    <a href="{% url 'company_profiles:detail' ticker=peer.ticker %}" 
+                       class="bg-gray-50 p-4 rounded shadow hover:shadow-lg transition border border-gray-200">
+                        <div class="font-bold text-lg">{{ peer.ticker }}</div>
+                        <div>{{ peer.name }}</div>
+                        {% if peer.financials %}
+                            <div class="mt-2 text-sm">
+                                <span class="text-gray-600">Market Cap:</span> 
+                                ${{ peer.financials.market_cap|floatformat:0|intcomma }}
+                            </div>
+                        {% endif %}
+                    </a>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="bg-gray-50 p-4 rounded">
+                <p>No peer companies available.</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Register a custom template filter to get dictionary items by key
+    django.templatetags.library.register('get_item', function(obj, item) {
+        return obj[item];
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,306 @@
+<!-- templates/company_profiles/company_detail.html -->
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}{{ company.name }} ({{ company.ticker }}) - Stock Analysis{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.css">
+{% endblock %}
+
+{% block content %}
+<div class="bg-white p-6 rounded-lg shadow-md">
+    <!-- Company Header -->
+    <div class="flex flex-col md:flex-row justify-between items-start mb-6">
+        <div>
+            <h1 class="text-3xl font-bold">{{ company.name }} ({{ company.ticker }})</h1>
+            <div class="text-gray-600">{{ company.sector }} | {{ company.industry }}</div>
+            {% if company.website %}
+                <a href="{{ company.website }}" target="_blank" class="text-blue-600 hover:underline">{{ company.website }}</a>
+            {% endif %}
+        </div>
+        
+        {% if company.financials %}
+            <div class="bg-gray-100 p-4 rounded-lg mt-4 md:mt-0">
+                <div class="text-3xl font-bold">${{ company.financials.current_price|floatformat:2 }}</div>
+                {% if company.financials.price_change_ytd %}
+                    <div class="{% if company.financials.price_change_ytd > 0 %}text-green-600{% else %}text-red-600{% endif %}">
+                        {{ company.financials.price_change_ytd|floatformat:2 }}% YTD
+                    </div>
+                {% endif %}
+            </div>
+        {% endif %}
+    </div>
+    
+    {% if error %}
+        <div class="bg-yellow-50 border border-yellow-200 text-yellow-800 p-4 mb-6 rounded">
+            {{ error }}
+        </div>
+    {% endif %}
+    
+    <!-- Navigation Tabs -->
+    <div class="border-b border-gray-200 mb-6">
+        <nav class="flex -mb-px">
+            <a href="{% url 'company_profiles:detail' ticker=company.ticker %}" 
+               class="px-4 py-2 border-b-2 border-blue-500 text-blue-600 font-medium">Overview</a>
+            <a href="{% url 'company_profiles:financials' ticker=company.ticker %}" 
+               class="px-4 py-2 border-b-2 border-transparent hover:border-gray-300 text-gray-600 hover:text-gray-800">Financials</a>
+            <a href="{% url 'company_profiles:peers' ticker=company.ticker %}" 
+               class="px-4 py-2 border-b-2 border-transparent hover:border-gray-300 text-gray-600 hover:text-gray-800">Peers</a>
+            <a href="{% url 'company_profiles:news' ticker=company.ticker %}" 
+               class="px-4 py-2 border-b-2 border-transparent hover:border-gray-300 text-gray-600 hover:text-gray-800">News</a>
+        </nav>
+    </div>
+    
+    <!-- Main Content -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Left Column - Key Metrics -->
+        <div class="lg:col-span-1">
+            <div class="bg-gray-50 p-4 rounded-lg shadow-sm mb-6">
+                <h2 class="text-xl font-bold mb-4">Key Metrics</h2>
+                
+                {% if company.financials %}
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <div class="text-sm text-gray-600">Market Cap</div>
+                            <div>${{ company.financials.market_cap|floatformat:0|intcomma }}</div>
+                        </div>
+                        <div>
+                            <div class="text-sm text-gray-600">P/E Ratio</div>
+                            <div>{{ company.financials.pe_ratio|default:"N/A"|floatformat:2 }}</div>
+                        </div>
+                        <div>
+                            <div class="text-sm text-gray-600">P/S Ratio</div>
+                            <div>{{ company.financials.ps_ratio|default:"N/A"|floatformat:2 }}</div>
+                        </div>
+                        <div>
+                            <div class="text-sm text-gray-600">P/B Ratio</div>
+                            <div>{{ company.financials.pb_ratio|default:"N/A"|floatformat:2 }}</div>
+                        </div>
+                        <div>
+                            <div class="text-sm text-gray-600">EV/EBITDA</div>
+                            <div>{{ company.financials.ev_ebitda|default:"N/A"|floatformat:2 }}</div>
+                        </div>
+                        <div>
+                            <div class="text-sm text-gray-600">FCF Yield</div>
+                            <div>{{ company.financials.fcf_yield|default:"N/A"|floatformat:2 }}%</div>
+                        </div>
+                    </div>
+                {% else %}
+                    <p>Financial data not available.</p>
+                {% endif %}
+            </div>
+            
+            <div class="bg-gray-50 p-4 rounded-lg shadow-sm mb-6">
+                <h2 class="text-xl font-bold mb-4">Quality & Growth</h2>
+                
+                {% if company.financials %}
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <div class="text-sm text-gray-600">Quality Score</div>
+                            <div>{{ company.financials.quality_score|default:"N/A" }}/9</div>
+                        </div>
+                        <div>
+                            <div class="text-sm text-gray-600">Profit Margin</div>
+                            <div>{{ company.financials.profit_margin|default:"N/A"|floatformat:2 }}%</div>
+                        </div>
+                        <div>
+                            <div class="text-sm text-gray-600">Operating Margin</div>
+                            <div>{{ company.financials.operating_margin|default:"N/A"|floatformat:2 }}%</div>
+                        </div>
+                    </div>
+                {% else %}
+                    <p>Financial data not available.</p>
+                {% endif %}
+            </div>
+            
+            <div class="bg-gray-50 p-4 rounded-lg shadow-sm mb-6">
+                <h2 class="text-xl font-bold mb-4">Balance Sheet</h2>
+                
+                {% if company.financials %}
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <div class="text-sm text-gray-600">Cash</div>
+                            <div>${{ company.financials.cash|default:"N/A"|floatformat:0|intcomma }}</div>
+                        </div>
+                        <div>
+                            <div class="text-sm text-gray-600">Debt</div>
+                            <div>${{ company.financials.total_debt|default:"N/A"|floatformat:0|intcomma }}</div>
+                        </div>
+                        <div>
+                            <div class="text-sm text-gray-600">Net Cash</div>
+                            <div>${{ company.financials.net_cash|default:"N/A"|floatformat:0|intcomma }}</div>
+                        </div>
+                        <div>
+                            <div class="text-sm text-gray-600">Shares Outstanding</div>
+                            <div>{{ company.financials.shares_outstanding|default:"N/A"|floatformat:0|intcomma }}</div>
+                        </div>
+                    </div>
+                {% else %}
+                    <p>Financial data not available.</p>
+                {% endif %}
+            </div>
+            
+            <div class="bg-gray-50 p-4 rounded-lg shadow-sm">
+                <h2 class="text-xl font-bold mb-4">Dividend Information</h2>
+                
+                {% if company.financials and company.financials.dividend_yield > 0 %}
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <div class="text-sm text-gray-600">Dividend Yield</div>
+                            <div>{{ company.financials.dividend_yield|floatformat:2 }}%</div>
+                        </div>
+                        <div>
+                            <div class="text-sm text-gray-600">Payout Ratio</div>
+                            <div>{{ company.financials.payout_ratio|default:"N/A"|floatformat:2 }}%</div>
+                        </div>
+                        {% if company.financials.ex_dividend_date %}
+                            <div>
+                                <div class="text-sm text-gray-600">Ex-Dividend Date</div>
+                                <div>{{ company.financials.ex_dividend_date|date:"M d, Y" }}</div>
+                            </div>
+                        {% endif %}
+                    </div>
+                {% else %}
+                    <p>No dividend information available.</p>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Right Column - Charts -->
+        <div class="lg:col-span-2">
+            <div class="bg-gray-50 p-4 rounded-lg shadow-sm mb-6">
+                <h2 class="text-xl font-bold mb-4">Stock Price (YTD)</h2>
+                <div class="h-64">
+                    <canvas id="priceChart"></canvas>
+                </div>
+            </div>
+            
+            <div class="bg-gray-50 p-4 rounded-lg shadow-sm mb-6">
+                <h2 class="text-xl font-bold mb-4">Revenue & Earnings Growth</h2>
+                <div class="h-64">
+                    <canvas id="financialChart"></canvas>
+                </div>
+            </div>
+            
+            {% if dividend_data %}
+                <div class="bg-gray-50 p-4 rounded-lg shadow-sm">
+                    <h2 class="text-xl font-bold mb-4">Dividend History</h2>
+                    <div class="h-64">
+                        <canvas id="dividendChart"></canvas>
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.js"></script>
+<script>
+    // Stock Price Chart
+    const priceData = {{ price_data|safe }};
+    const priceCtx = document.getElementById('priceChart').getContext('2d');
+    
+    new Chart(priceCtx, {
+        type: 'line',
+        data: {
+            labels: priceData.map(item => item.date),
+            datasets: [{
+                label: 'Stock Price ($)',
+                data: priceData.map(item => item.price),
+                borderColor: 'rgb(59, 130, 246)',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                fill: true,
+                tension: 0.1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: {
+                    grid: {
+                        display: false
+                    }
+                }
+            }
+        }
+    });
+    
+    // Financial Chart
+    const financialData = {{ financial_history|safe }};
+    const financialCtx = document.getElementById('financialChart').getContext('2d');
+    
+    new Chart(financialCtx, {
+        type: 'bar',
+        data: {
+            labels: financialData.years,
+            datasets: [
+                {
+                    label: 'Revenue',
+                    data: financialData.revenue,
+                    backgroundColor: 'rgba(59, 130, 246, 0.7)',
+                    order: 1
+                },
+                {
+                    label: 'Net Income',
+                    data: financialData.net_income,
+                    backgroundColor: 'rgba(16, 185, 129, 0.7)',
+                    order: 2
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: {
+                    grid: {
+                        display: false
+                    }
+                },
+                y: {
+                    ticks: {
+                        callback: function(value) {
+                            return '$' + (value / 1e9).toFixed(1) + 'B';
+                        }
+                    }
+                }
+            }
+        }
+    });
+    
+    {% if dividend_data %}
+    // Dividend Chart
+    const dividendData = {{ dividend_data|safe }};
+    const dividendCtx = document.getElementById('dividendChart').getContext('2d');
+    
+    new Chart(dividendCtx, {
+        type: 'line',
+        data: {
+            labels: dividendData.map(item => item.date),
+            datasets: [{
+                label: 'Dividend ($)',
+                data: dividendData.map(item => item.dividend),
+                borderColor: 'rgb(16, 185, 129)',
+                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: {
+                    grid: {
+                        display: false
+                    }
+                }
+            }
+        }
+    });
+    {% endif %}
+</script>
+{% endblock %}

@@ -1,0 +1,25 @@
+<!-- templates/company_profiles/company_not_found.html -->
+{% extends 'base.html' %}
+
+{% block title %}Company Not Found - Stock Market Analysis{% endblock %}
+
+{% block content %}
+<div class="bg-white p-8 rounded-lg shadow-md text-center">
+    <h1 class="text-3xl font-bold mb-4">Company Not Found</h1>
+    <p class="text-lg mb-8">Sorry, we couldn't find any information for ticker "{{ ticker }}".</p>
+    
+    <div class="bg-blue-50 p-4 rounded-lg inline-block text-left mb-8">
+        <h2 class="font-bold mb-2">Possible reasons:</h2>
+        <ul class="list-disc pl-5">
+            <li>The ticker symbol is incorrect</li>
+            <li>The company is not listed on a major exchange</li>
+            <li>There was an error accessing financial data</li>
+            <li>The company might have been delisted or changed its ticker</li>
+        </ul>
+    </div>
+    
+    <a href="{% url 'core:home' %}" class="inline-block bg-blue-600 text-white px-6 py-3 rounded hover:bg-blue-700">
+        Back to Home
+    </a>
+</div>
+{% endblock %}

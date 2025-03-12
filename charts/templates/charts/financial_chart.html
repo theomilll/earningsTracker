@@ -1,0 +1,312 @@
+<!-- templates/charts/financial_chart.html -->
+{% extends 'base.html' %}
+
+{% block title %}{{ company.name }} ({{ company.ticker }}) Financial Charts - Stock Analysis{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.css">
+<style>
+    .chart-container {
+        height: 500px;
+        position: relative;
+    }
+    .metric-button {
+        @apply px-3 py-1 rounded;
+    }
+    .metric-button.active {
+        @apply bg-blue-600 text-white;
+    }
+    .metric-button:not(.active) {
+        @apply bg-gray-200 hover:bg-gray-300 text-gray-800;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="bg-white p-6 rounded-lg shadow-md">
+    <!-- Company Header -->
+    <div class="flex flex-col md:flex-row justify-between items-start mb-6">
+        <div>
+            <h1 class="text-3xl font-bold">{{ company.name }} ({{ company.ticker }})</h1>
+            <div class="text-gray-600">{{ company.sector }} | {{ company.industry }}</div>
+        </div>
+        
+        {% if company.financials %}
+            <div class="bg-gray-100 p-4 rounded-lg mt-4 md:mt-0">
+                <div class="text-3xl font-bold">${{ company.financials.current_price|floatformat:2 }}</div>
+                {% if company.financials.price_change_ytd %}
+                    <div class="{% if company.financials.price_change_ytd > 0 %}text-green-600{% else %}text-red-600{% endif %}">
+                        {{ company.financials.price_change_ytd|floatformat:2 }}% YTD
+                    </div>
+                {% endif %}
+            </div>
+        {% endif %}
+    </div>
+    
+    <!-- Chart Controls -->
+    <div class="mb-4">
+        <h2 class="text-xl font-bold mb-2">Financial Metrics</h2>
+        
+        <div class="flex flex-wrap gap-2 mb-4" id="metricControls">
+            {% for metric in metrics %}
+                <button class="metric-button {% if metric.value == default_metric %}active{% endif %}" 
+                        data-metric="{{ metric.value }}">
+                    {{ metric.label }}
+                </button>
+            {% endfor %}
+        </div>
+        
+        <div class="flex gap-4">
+            <div class="flex items-center">
+                <input type="radio" id="annualData" name="dataPeriod" value="annual" checked 
+                       class="mr-2">
+                <label for="annualData">Annual</label>
+            </div>
+            <div class="flex items-center">
+                <input type="radio" id="quarterlyData" name="dataPeriod" value="quarterly"
+                       class="mr-2">
+                <label for="quarterlyData">Quarterly</label>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Chart Container -->
+    <div class="chart-container">
+        <canvas id="financialChart"></canvas>
+    </div>
+    
+    <!-- Loading Indicator -->
+    <div id="loadingIndicator" class="hidden text-center py-4">
+        <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <span class="ml-2">Loading data...</span>
+    </div>
+    
+    <!-- Error Message -->
+    <div id="errorMessage" class="hidden bg-red-50 border border-red-200 text-red-800 p-4 rounded mt-4"></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.js"></script>
+<script>
+    // Chart configuration
+    let financialChart = null;
+    
+    // Get DOM elements
+    const chartCanvas = document.getElementById('financialChart');
+    const metricButtons = document.querySelectorAll('.metric-button');
+    const annualRadio = document.getElementById('annualData');
+    const quarterlyRadio = document.getElementById('quarterlyData');
+    const loadingIndicator = document.getElementById('loadingIndicator');
+    const errorMessage = document.getElementById('errorMessage');
+    
+    // Initialize with default metric
+    loadChartData('{{ default_metric }}', 'annual');
+    
+    // Metric button click handlers
+    metricButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            // Update active button
+            metricButtons.forEach(btn => btn.classList.remove('active'));
+            this.classList.add('active');
+            
+            // Load data for selected metric
+            const metric = this.getAttribute('data-metric');
+            const period = annualRadio.checked ? 'annual' : 'quarterly';
+            loadChartData(metric, period);
+        });
+    });
+    
+    // Time period radio button handlers
+    annualRadio.addEventListener('change', function() {
+        if (this.checked) {
+            const activeButton = document.querySelector('.metric-button.active');
+            const metric = activeButton.getAttribute('data-metric');
+            loadChartData(metric, 'annual');
+        }
+    });
+    
+    quarterlyRadio.addEventListener('change', function() {
+        if (this.checked) {
+            const activeButton = document.querySelector('.metric-button.active');
+            const metric = activeButton.getAttribute('data-metric');
+            loadChartData(metric, 'quarterly');
+        }
+    });
+    
+    // Function to load chart data
+    function loadChartData(metric, period) {
+        // Show loading indicator
+        loadingIndicator.classList.remove('hidden');
+        errorMessage.classList.add('hidden');
+        
+        // Fetch data from API
+        fetch(`{% url 'charts:financial_data' ticker=company.ticker %}?metric=${metric}&period=${period}`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
+            .then(data => {
+                // Hide loading indicator
+                loadingIndicator.classList.add('hidden');
+                
+                // Update chart with new data
+                updateChart(data, metric);
+            })
+            .catch(error => {
+                // Hide loading indicator and show error
+                loadingIndicator.classList.add('hidden');
+                errorMessage.textContent = `Error loading chart data: ${error.message}`;
+                errorMessage.classList.remove('hidden');
+                console.error('Error fetching chart data:', error);
+            });
+    }
+    
+    // Function to update the chart with new data
+    function updateChart(data, metric) {
+        // Destroy existing chart if it exists
+        if (financialChart) {
+            financialChart.destroy();
+        }
+        
+        // Format data for chart
+        const chartData = {
+            labels: data.data.map(item => item.date),
+            datasets: [{
+                label: getMetricLabel(metric),
+                data: data.data.map(item => item.value),
+                backgroundColor: 'rgba(59, 130, 246, 0.7)',
+                borderColor: 'rgb(59, 130, 246)',
+                borderWidth: 1
+            }]
+        };
+        
+        // Determine chart type based on metric
+        const chartType = getChartTypeForMetric(metric);
+        const yAxisConfig = getYAxisConfigForMetric(metric);
+        
+        // Create new chart
+        financialChart = new Chart(chartCanvas, {
+            type: chartType,
+            data: chartData,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        grid: {
+                            display: false
+                        }
+                    },
+                    y: yAxisConfig
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const value = context.raw;
+                                return getFormattedValueForMetric(metric, value);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+    
+    // Helper function to get metric label
+    function getMetricLabel(metric) {
+        const metricLabels = {
+            'revenue': 'Revenue',
+            'net_income': 'Net Income',
+            'ebitda': 'EBITDA',
+            'eps': 'Earnings Per Share',
+            'fcf': 'Free Cash Flow',
+            'profit_margin': 'Profit Margin',
+            'operating_margin': 'Operating Margin',
+            'roe': 'Return on Equity',
+            'roa': 'Return on Assets'
+        };
+        
+        return metricLabels[metric] || metric;
+    }
+    
+    // Helper function to get chart type based on metric
+    function getChartTypeForMetric(metric) {
+        // Return 'bar' for revenue, net_income, ebitda, fcf
+        // Return 'line' for margin metrics, eps
+        const barMetrics = ['revenue', 'net_income', 'ebitda', 'fcf'];
+        return barMetrics.includes(metric) ? 'bar' : 'line';
+    }
+    
+    // Helper function to get y-axis configuration based on metric
+    function getYAxisConfigForMetric(metric) {
+        const percentageMetrics = ['profit_margin', 'operating_margin', 'roe', 'roa'];
+        
+        if (percentageMetrics.includes(metric)) {
+            return {
+                ticks: {
+                    callback: function(value) {
+                        return value + '%';
+                    }
+                }
+            };
+        }
+        
+        if (metric === 'eps') {
+            return {
+                ticks: {
+                    callback: function(value) {
+                        return '$' + value.toFixed(2);
+                    }
+                }
+            };
+        }
+        
+        // For monetary values (revenue, net_income, etc.)
+        return {
+            ticks: {
+                callback: function(value) {
+                    if (Math.abs(value) >= 1000000000) {
+                        return '$' + (value / 1000000000).toFixed(1) + 'B';
+                    }
+                    if (Math.abs(value) >= 1000000) {
+                        return '$' + (value / 1000000).toFixed(1) + 'M';
+                    }
+                    if (Math.abs(value) >= 1000) {
+                        return '$' + (value / 1000).toFixed(0) + 'K';
+                    }
+                    return '$' + value;
+                }
+            }
+        };
+    }
+    
+    // Helper function to format values for tooltip
+    function getFormattedValueForMetric(metric, value) {
+        const percentageMetrics = ['profit_margin', 'operating_margin', 'roe', 'roa'];
+        
+        if (percentageMetrics.includes(metric)) {
+            return value.toFixed(2) + '%';
+        }
+        
+        if (metric === 'eps') {
+            return '$' + value.toFixed(2) + ' per share';
+        }
+        
+        // For monetary values (revenue, net_income, etc.)
+        if (Math.abs(value) >= 1000000000) {
+            return '$' + (value / 1000000000).toFixed(2) + ' billion';
+        }
+        if (Math.abs(value) >= 1000000) {
+            return '$' + (value / 1000000).toFixed(2) + ' million';
+        }
+        if (Math.abs(value) >= 1000) {
+            return '$' + (value / 1000).toFixed(0) + ' thousand';
+        }
+        return '$' + value;
+    }
+</script>
+{% endblock %}

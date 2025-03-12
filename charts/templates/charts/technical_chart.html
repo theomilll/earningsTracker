@@ -1,0 +1,492 @@
+<!-- templates/charts/technical_chart.html -->
+{% extends 'base.html' %}
+
+{% block title %}{{ company.name }} ({{ company.ticker }}) Technical Analysis - Stock Analysis{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.css">
+<style>
+    .chart-container {
+        height: 500px;
+        position: relative;
+    }
+    .control-button {
+        @apply px-3 py-1 rounded;
+    }
+    .control-button.active {
+        @apply bg-blue-600 text-white;
+    }
+    .control-button:not(.active) {
+        @apply bg-gray-200 hover:bg-gray-300 text-gray-800;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="bg-white p-6 rounded-lg shadow-md">
+    <!-- Company Header -->
+    <div class="flex flex-col md:flex-row justify-between items-start mb-6">
+        <div>
+            <h1 class="text-3xl font-bold">{{ company.name }} ({{ company.ticker }})</h1>
+            <div class="text-gray-600">{{ company.sector }} | {{ company.industry }}</div>
+        </div>
+        
+        {% if company.financials %}
+            <div class="bg-gray-100 p-4 rounded-lg mt-4 md:mt-0">
+                <div class="text-3xl font-bold">${{ company.financials.current_price|floatformat:2 }}</div>
+                {% if company.financials.price_change_ytd %}
+                    <div class="{% if company.financials.price_change_ytd > 0 %}text-green-600{% else %}text-red-600{% endif %}">
+                        {{ company.financials.price_change_ytd|floatformat:2 }}% YTD
+                    </div>
+                {% endif %}
+            </div>
+        {% endif %}
+    </div>
+    
+    <!-- Chart Controls -->
+    <div class="mb-4">
+        <h2 class="text-xl font-bold mb-2">Technical Analysis</h2>
+        
+        <div class="flex flex-wrap gap-4 mb-4">
+            <div>
+                <div class="text-sm text-gray-600 mb-1">Time Range</div>
+                <div class="flex flex-wrap gap-1" id="rangeControls">
+                    {% for range in ranges %}
+                        <button class="control-button {% if range.value == default_range %}active{% endif %}" 
+                                data-range="{{ range.value }}">
+                            {{ range.label }}
+                        </button>
+                    {% endfor %}
+                </div>
+            </div>
+            
+            <div>
+                <div class="text-sm text-gray-600 mb-1">Indicator</div>
+                <div class="flex flex-wrap gap-1" id="indicatorControls">
+                    {% for indicator in indicators %}
+                        <button class="control-button {% if indicator.value == default_indicator %}active{% endif %}" 
+                                data-indicator="{{ indicator.value }}">
+                            {{ indicator.label }}
+                        </button>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Chart Container -->
+    <div class="chart-container">
+        <canvas id="technicalChart"></canvas>
+    </div>
+    
+    <!-- Loading Indicator -->
+    <div id="loadingIndicator" class="hidden text-center py-4">
+        <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <span class="ml-2">Loading data...</span>
+    </div>
+    
+    <!-- Error Message -->
+    <div id="errorMessage" class="hidden bg-red-50 border border-red-200 text-red-800 p-4 rounded mt-4"></div>
+    
+    <!-- Indicator Description -->
+    <div class="mt-4 p-4 bg-gray-50 rounded">
+        <h3 class="font-bold mb-2" id="indicatorTitle">Simple Moving Average (SMA)</h3>
+        <p id="indicatorDescription">
+            A simple moving average (SMA) calculates the average of a selected range of prices by the number of periods in that range. SMAs are often used to determine trend direction and support/resistance levels.
+        </p>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.js"></script>
+<script>
+    // Chart configuration
+    let technicalChart = null;
+    
+    // Get DOM elements
+    const chartCanvas = document.getElementById('technicalChart');
+    const rangeButtons = document.querySelectorAll('#rangeControls .control-button');
+    const indicatorButtons = document.querySelectorAll('#indicatorControls .control-button');
+    const loadingIndicator = document.getElementById('loadingIndicator');
+    const errorMessage = document.getElementById('errorMessage');
+    const indicatorTitle = document.getElementById('indicatorTitle');
+    const indicatorDescription = document.getElementById('indicatorDescription');
+    
+    // Initialize with default values
+    loadChartData('{{ default_indicator }}', '{{ default_range }}');
+    updateIndicatorInfo('{{ default_indicator }}');
+    
+    // Range button click handlers
+    rangeButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            // Update active button
+            rangeButtons.forEach(btn => btn.classList.remove('active'));
+            this.classList.add('active');
+            
+            // Load data with new range
+            const range = this.getAttribute('data-range');
+            const activeIndicator = document.querySelector('#indicatorControls .control-button.active');
+            const indicator = activeIndicator.getAttribute('data-indicator');
+            loadChartData(indicator, range);
+        });
+    });
+    
+    // Indicator button click handlers
+    indicatorButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            // Update active button
+            indicatorButtons.forEach(btn => btn.classList.remove('active'));
+            this.classList.add('active');
+            
+            // Load data with new indicator
+            const indicator = this.getAttribute('data-indicator');
+            const activeRange = document.querySelector('#rangeControls .control-button.active');
+            const range = activeRange.getAttribute('data-range');
+            loadChartData(indicator, range);
+            
+            // Update indicator description
+            updateIndicatorInfo(indicator);
+        });
+    });
+    
+    // Function to load chart data
+    function loadChartData(indicator, period) {
+        // Show loading indicator
+        loadingIndicator.classList.remove('hidden');
+        errorMessage.classList.add('hidden');
+        
+        // Fetch data from API
+        fetch(`{% url 'charts:technical_data' ticker=company.ticker %}?indicator=${indicator}&period=${period}`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
+            .then(data => {
+                // Hide loading indicator
+                loadingIndicator.classList.add('hidden');
+                
+                // Update chart with new data
+                updateChart(data);
+            })
+            .catch(error => {
+                // Hide loading indicator and show error
+                loadingIndicator.classList.add('hidden');
+                errorMessage.textContent = `Error loading chart data: ${error.message}`;
+                errorMessage.classList.remove('hidden');
+                console.error('Error fetching chart data:', error);
+            });
+    }
+    
+    // Function to update the chart with new data
+    function updateChart(data) {
+        // Destroy existing chart if it exists
+        if (technicalChart) {
+            technicalChart.destroy();
+        }
+        
+        // Prepare price dataset
+        const priceData = data.price_data.map(item => ({
+            x: item.date,
+            y: item.close
+        }));
+        
+        // Create datasets array starting with price
+        const datasets = [
+            {
+                label: 'Price',
+                data: priceData,
+                borderColor: 'rgb(59, 130, 246)',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                fill: false,
+                tension: 0.1,
+                pointRadius: 0,
+                borderWidth: 2,
+                yAxisID: 'y'
+            }
+        ];
+        
+        // Add indicator datasets based on type
+        if (data.indicator === 'sma') {
+            // Group indicator data by SMA period
+            const sma20Data = data.indicator_data.filter(item => item.type === 'SMA20');
+            const sma50Data = data.indicator_data.filter(item => item.type === 'SMA50');
+            const sma200Data = data.indicator_data.filter(item => item.type === 'SMA200');
+            
+            // Add SMA datasets
+            datasets.push({
+                label: 'SMA 20',
+                data: sma20Data.map(item => ({
+                    x: item.date,
+                    y: item.value
+                })),
+                borderColor: 'rgb(245, 158, 11)',
+                backgroundColor: 'transparent',
+                borderWidth: 1.5,
+                pointRadius: 0,
+                yAxisID: 'y'
+            });
+            
+            datasets.push({
+                label: 'SMA 50',
+                data: sma50Data.map(item => ({
+                    x: item.date,
+                    y: item.value
+                })),
+                borderColor: 'rgb(16, 185, 129)',
+                backgroundColor: 'transparent',
+                borderWidth: 1.5,
+                pointRadius: 0,
+                yAxisID: 'y'
+            });
+            
+            datasets.push({
+                label: 'SMA 200',
+                data: sma200Data.map(item => ({
+                    x: item.date,
+                    y: item.value
+                })),
+                borderColor: 'rgb(239, 68, 68)',
+                backgroundColor: 'transparent',
+                borderWidth: 1.5,
+                pointRadius: 0,
+                yAxisID: 'y'
+            });
+        } else if (data.indicator === 'ema') {
+            // Group indicator data by EMA period
+            const ema12Data = data.indicator_data.filter(item => item.type === 'EMA12');
+            const ema26Data = data.indicator_data.filter(item => item.type === 'EMA26');
+            
+            // Add EMA datasets
+            datasets.push({
+                label: 'EMA 12',
+                data: ema12Data.map(item => ({
+                    x: item.date,
+                    y: item.value
+                })),
+                borderColor: 'rgb(16, 185, 129)',
+                backgroundColor: 'transparent',
+                borderWidth: 1.5,
+                pointRadius: 0,
+                yAxisID: 'y'
+            });
+            
+            datasets.push({
+                label: 'EMA 26',
+                data: ema26Data.map(item => ({
+                    x: item.date,
+                    y: item.value
+                })),
+                borderColor: 'rgb(239, 68, 68)',
+                backgroundColor: 'transparent',
+                borderWidth: 1.5,
+                pointRadius: 0,
+                yAxisID: 'y'
+            });
+        } else if (data.indicator === 'rsi') {
+            // Add RSI dataset with separate y-axis
+            datasets.push({
+                label: 'RSI (14)',
+                data: data.indicator_data.map(item => ({
+                    x: item.date,
+                    y: item.value
+                })),
+                borderColor: 'rgb(139, 92, 246)',
+                backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                fill: true,
+                borderWidth: 1.5,
+                yAxisID: 'rsi'
+            });
+        } else if (data.indicator === 'macd') {
+            // Add MACD dataset with separate y-axis
+            datasets.push({
+                label: 'MACD',
+                data: data.indicator_data.map(item => ({
+                    x: item.date,
+                    y: item.value
+                })),
+                borderColor: 'rgb(16, 185, 129)',
+                backgroundColor: 'transparent',
+                borderWidth: 1.5,
+                yAxisID: 'macd'
+            });
+            
+            // Add Signal Line
+            datasets.push({
+                label: 'Signal',
+                data: data.indicator_data.map(item => ({
+                    x: item.date,
+                    y: item.signal
+                })),
+                borderColor: 'rgb(239, 68, 68)',
+                backgroundColor: 'transparent',
+                borderWidth: 1.5,
+                yAxisID: 'macd'
+            });
+        } else if (data.indicator === 'bollinger') {
+            // Add Bollinger Bands
+            datasets.push({
+                label: 'Middle Band (SMA 20)',
+                data: data.indicator_data.map(item => ({
+                    x: item.date,
+                    y: item.middle
+                })),
+                borderColor: 'rgb(16, 185, 129)',
+                backgroundColor: 'transparent',
+                borderWidth: 1.5,
+                pointRadius: 0,
+                yAxisID: 'y'
+            });
+            
+            datasets.push({
+                label: 'Upper Band',
+                data: data.indicator_data.map(item => ({
+                    x: item.date,
+                    y: item.upper
+                })),
+                borderColor: 'rgba(239, 68, 68, 0.7)',
+                backgroundColor: 'transparent',
+                borderWidth: 1,
+                pointRadius: 0,
+                borderDash: [5, 5],
+                yAxisID: 'y'
+            });
+            
+            datasets.push({
+                label: 'Lower Band',
+                data: data.indicator_data.map(item => ({
+                    x: item.date,
+                    y: item.lower
+                })),
+                borderColor: 'rgba(239, 68, 68, 0.7)',
+                backgroundColor: 'rgba(239, 68, 68, 0.05)',
+                fill: '-1',
+                borderWidth: 1,
+                pointRadius: 0,
+                borderDash: [5, 5],
+                yAxisID: 'y'
+            });
+        }
+        
+        // Configure scales based on indicator
+        const scales = {
+            x: {
+                type: 'category',
+                grid: {
+                    display: false
+                }
+            },
+            y: {
+                position: 'right',
+                title: {
+                    display: true,
+                    text: 'Price ($)'
+                },
+                grid: {
+                    color: 'rgba(0, 0, 0, 0.05)'
+                }
+            }
+        };
+        
+        // Add indicator-specific scales
+        if (data.indicator === 'rsi') {
+            scales.rsi = {
+                position: 'left',
+                min: 0,
+                max: 100,
+                grid: {
+                    color: 'rgba(0, 0, 0, 0.05)'
+                },
+                title: {
+                    display: true,
+                    text: 'RSI'
+                }
+            };
+        } else if (data.indicator === 'macd') {
+            scales.macd = {
+                position: 'left',
+                grid: {
+                    color: 'rgba(0, 0, 0, 0.05)'
+                },
+                title: {
+                    display: true,
+                    text: 'MACD'
+                }
+            };
+        }
+        
+        // Create chart
+        technicalChart = new Chart(chartCanvas, {
+            type: 'line',
+            data: {
+                datasets: datasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: scales,
+                interaction: {
+                    mode: 'index',
+                    intersect: false
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                let value = context.parsed.y;
+                                
+                                if (label) {
+                                    label += ': ';
+                                }
+                                
+                                if (context.dataset.yAxisID === 'y') {
+                                    label += '$' + value.toFixed(2);
+                                } else {
+                                    label += value.toFixed(2);
+                                }
+                                
+                                return label;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+    
+    // Function to update indicator information
+    function updateIndicatorInfo(indicator) {
+        const indicatorInfo = {
+            'sma': {
+                title: 'Simple Moving Average (SMA)',
+                description: 'A simple moving average (SMA) calculates the average of a selected range of prices by the number of periods in that range. SMAs are often used to determine trend direction and support/resistance levels.'
+            },
+            'ema': {
+                title: 'Exponential Moving Average (EMA)',
+                description: 'An exponential moving average (EMA) gives more weight to recent prices, making it more responsive to new information than a simple moving average (SMA). EMAs reduce the lag in moving averages and are commonly used in conjunction with other indicators to confirm significant market moves and gauge their validity.'
+            },
+            'rsi': {
+                title: 'Relative Strength Index (RSI)',
+                description: 'The Relative Strength Index (RSI) is a momentum oscillator that measures the speed and change of price movements. RSI oscillates between 0 and 100. Traditionally, RSI is considered overbought when above 70 and oversold when below 30. Signals can also be generated by looking for divergences, failure swings, and centerline crossovers.'
+            },
+            'macd': {
+                title: 'Moving Average Convergence Divergence (MACD)',
+                description: 'The Moving Average Convergence Divergence (MACD) is a trend-following momentum indicator that shows the relationship between two moving averages of a security\'s price. The MACD is calculated by subtracting the 26-period EMA from the 12-period EMA. The result of that calculation is the MACD line. A 9-day EMA of the MACD, called the "signal line," is then plotted on top of the MACD line, which can function as a trigger for buy and sell signals.'
+            },
+            'bollinger': {
+                title: 'Bollinger Bands',
+                description: 'Bollinger Bands are a volatility indicator consisting of three lines: a simple moving average (middle band) and an upper and lower band. The upper and lower bands are typically 2 standard deviations +/- from the middle band. They help determine whether prices are high or low on a relative basis. They expand during periods of high volatility and contract during periods of low volatility.'
+            }
+        };
+        
+        // Update DOM elements
+        if (indicatorInfo[indicator]) {
+            indicatorTitle.textContent = indicatorInfo[indicator].title;
+            indicatorDescription.textContent = indicatorInfo[indicator].description;
+        }
+    }
+</script>
+{% endblock %}
