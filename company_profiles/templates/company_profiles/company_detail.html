@@ -18,6 +18,9 @@
             {% if company.website %}
                 <a href="{{ company.website }}" target="_blank" class="text-blue-600 hover:underline">{{ company.website }}</a>
             {% endif %}
+            <div class="text-sm text-gray-500 mt-2">
+                Last updated: {{ company.last_updated|date:"F j, Y, g:i a" }}
+            </div>
         </div>
         
         {% if company.financials %}
@@ -28,6 +31,9 @@
                         {{ company.financials.price_change_ytd|floatformat:2 }}% YTD
                     </div>
                 {% endif %}
+                <div class="text-xs text-gray-500 mt-2">
+                    Financial data updated: {{ company.financials.last_updated|date:"F j, Y, g:i a" }}
+                </div>
             </div>
         {% endif %}
     </div>

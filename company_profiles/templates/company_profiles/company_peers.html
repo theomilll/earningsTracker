@@ -1,5 +1,7 @@
 <!-- templates/company_profiles/company_peers.html -->
 {% extends 'base.html' %}
+{% load humanize %}
+{% load company_filters %}  <!-- Load the custom filter module -->
 
 {% block title %}{{ company.name }} ({{ company.ticker }}) Peer Comparison - Stock Analysis{% endblock %}
 
@@ -10,6 +12,9 @@
         <div>
             <h1 class="text-3xl font-bold">{{ company.name }} ({{ company.ticker }})</h1>
             <div class="text-gray-600">{{ company.sector }} | {{ company.industry }}</div>
+            <div class="text-sm text-gray-500 mt-2">
+                Last updated: {{ company.last_updated|date:"F j, Y, g:i a" }}
+            </div>
         </div>
         
         {% if company.financials %}
@@ -20,6 +25,9 @@
                         {{ company.financials.price_change_ytd|floatformat:2 }}% YTD
                     </div>
                 {% endif %}
+                <div class="text-xs text-gray-500 mt-2">
+                    Financial data updated: {{ company.financials.last_updated|date:"F j, Y, g:i a" }}
+                </div>
             </div>
         {% endif %}
     </div>
@@ -107,13 +115,4 @@
         {% endif %}
     </div>
 </div>
-{% endblock %}
-
-{% block extra_js %}
-<script>
-    // Register a custom template filter to get dictionary items by key
-    django.templatetags.library.register('get_item', function(obj, item) {
-        return obj[item];
-    });
-</script>
 {% endblock %}

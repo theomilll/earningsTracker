@@ -165,6 +165,7 @@ def company_peers(request, ticker):
                 {'name': 'P/E Ratio', 'field': 'pe_ratio', 'formatter': lambda x: f"{x:.2f}" if x else "N/A"},
                 {'name': 'P/S Ratio', 'field': 'ps_ratio', 'formatter': lambda x: f"{x:.2f}" if x else "N/A"},
                 {'name': 'EV/EBITDA', 'field': 'ev_ebitda', 'formatter': lambda x: f"{x:.2f}" if x else "N/A"},
+                {'name': 'Free Cash Flow', 'field': 'fcf_yield', 'formatter': lambda x: f"{x:.2f}%" if x else "N/A"},
                 {'name': 'Profit Margin', 'field': 'profit_margin', 'formatter': lambda x: f"{x:.2f}%" if x else "N/A"},
                 {'name': 'Dividend Yield', 'field': 'dividend_yield', 'formatter': lambda x: f"{x:.2f}%" if x else "N/A"},
             ]
